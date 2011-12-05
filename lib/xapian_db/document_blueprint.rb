@@ -31,16 +31,20 @@ module XapianDb
       # - adapter (see {#adapter} for details)
       # - attribute (see {#attribute} for details)
       # - index (see {#index} for details)
-      def setup(klass, &block)
+      def setup(klass_or_name, &block)
         @blueprints ||= {}
+        name = klass_or_name.is_a?(Class) ? klass_or_name.name : klass_or_name.to_s
         blueprint = DocumentBlueprint.new
         yield blueprint if block_given? # configure the blueprint through the block
         validate_type_consistency_on blueprint
         # Remove a previously loaded blueprint for this class to avoid stale blueprint definitions
-        @blueprints.delete_if { |indexed_class, blueprint| indexed_class.name == klass.name }
-        @blueprints[klass] = blueprint
+        @blueprints.delete_if { |indexed_class, blueprint| indexed_class == name }
+        @blueprints[name] = blueprint
         @_adapter = blueprint._adapter || XapianDb::Config.adapter || Adapters::GenericAdapter
-        @_adapter.add_class_helper_methods_to klass
+
+        if eval("defined?(#{name}) && #{name}.is_a?(Class)")
+          @_adapter.add_class_helper_methods_to XapianDb::Utilities.constantize(name)
+        end
 
         @searchable_prefixes = @blueprints.values.map { |blueprint| blueprint.searchable_prefixes }.flatten.compact.uniq || []
         # We can always do a field search on the name of the indexed class
@@ -51,17 +55,25 @@ module XapianDb
       # Get all configured classes
       # @return [Array<Class>]
       def configured_classes
-        @blueprints ? @blueprints.keys : []
+        if @blueprints
+          @blueprints.keys.map {|class_name| XapianDb::Utilities.constantize(class_name) }
+        else
+          []
+        end
       end
 
       # Get the blueprint for a class
       # @return [DocumentBlueprint]
-      def blueprint_for(klass)
+      def blueprint_for(klass_or_name)
         if @blueprints
-          key = klass
-          while key != Object
-            return @blueprints[key] unless @blueprints[key].nil?
-            key = key.superclass
+          key = klass_or_name.to_s
+          while key != 'Object'
+            if @blueprints.has_key?(key)
+              return @blueprints[key]
+            else
+              klass = XapianDb::Utilities.constantize(key)
+              key = klass.superclass.name
+              end
           end
           raise "Blueprint for class #{klass} is not defined"
         end
@@ -207,7 +219,7 @@ module XapianDb
     # ---------------------------------------------------------------------------------
 
     attr_accessor :_adapter
-    attr_reader :_base_query, :_natural_sort_order
+    attr_reader :_natural_sort_order
 
     # Construct the blueprint
     def initialize
@@ -314,9 +326,17 @@ module XapianDb
     # @param [expression] a base query expression
     # @example Include the adresses
     #   blueprint.base_query Person.includes(:addresses)
-    def base_query(expression)
-      @_base_query = expression
+    def base_query(expression = nil, &block)
+      block = lambda { expression } unless expression.nil?
+      @_lazy_base_query = block
     end
+
+    def _base_query
+      if @_lazy_base_query
+        @_lazy_base_query.call
+      end
+    end
+
 
     # Define the natural sort order.
     # @param [String] name The name of the method that delivers the sort expression

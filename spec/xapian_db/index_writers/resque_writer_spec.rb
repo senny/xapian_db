@@ -1,5 +1,7 @@
 require 'xapian_db'
 
+require File.expand_path(File.dirname(__FILE__) + '/../../../lib/xapian_db/index_writers/resque_writer')
+
 describe XapianDb::IndexWriters::ResqueWriter do
 
   class TestIndexClass

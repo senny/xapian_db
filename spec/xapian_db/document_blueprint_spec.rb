@@ -15,9 +15,29 @@ describe XapianDb::DocumentBlueprint do
         blueprint.index :name
       end
       XapianDb::DocumentBlueprint.configured_classes.size.should == 1
-      XapianDb::DocumentBlueprint.configured_classes.first.should == IndexedObject
+      XapianDb::DocumentBlueprint.configured_classes.should == [IndexedObject]
     end
 
+  end
+
+  describe "lazy loaded blueprint models" do
+    it "allows blueprint definitions with symbols" do
+      XapianDb::DocumentBlueprint.setup(:IndexedObject)
+      XapianDb::DocumentBlueprint.blueprint_for('IndexedObject').should_not be_nil
+    end
+
+    it "allows blueprint definitions with strings" do
+      XapianDb::DocumentBlueprint.setup('IndexedObject')
+      XapianDb::DocumentBlueprint.blueprint_for(:IndexedObject).should_not be_nil
+    end
+
+    it "lazy-loads blueprint classes" do
+      lambda do
+        XapianDb::DocumentBlueprint.setup(:NotYetLoadedClass)
+        class NotYetLoadedClass; end
+      end.should_not raise_error
+      XapianDb::DocumentBlueprint.blueprint_for(NotYetLoadedClass).should_not be_nil
+    end
   end
 
   describe ".blueprint_for(klass)" do
